@@ -1,36 +1,27 @@
-#include"chessboard_def.h"
+#pragma once
+#include"common/renju.h"
 
 class ChessBoard
 {
 public:
     ChessBoard();
-    ChessBoard(int width, int height);
+    ChessBoard(int size);
+	ChessBoard(ChessType cb[CB_SIZE][CB_SIZE]);
     ~ChessBoard();
 
-    bool Init(int width, int height);
+	// 以行列(i,j)进行索引
+    ChessType GetChess(int i, int j) const;
+    ChessType SetChess(int i, int j, ChessType chess);
+    bool IsChessExist(int i, int j) const;
+    bool IsValidPos(int i, int j) const;
+	bool IsFull() const ; // 棋盘是否已满
 
-    int GetChess(int x, int y) const;
-    int SetChess(int x, int y, int chess);
-    bool IsChessExist(int x, int y) const;
-    bool IsValidPos(int x, int y) const;
-
-    inline int GetWidth() const
-    {
-        return _width;
-    }
-
-    inline int GetHeight() const
-    {
-        return _height;
-    }
+	inline int GetSize() const { return _size; }
 
 private:
-    bool createChessBoard(int width, int height);
-    void destroyChessBoard();
-
+    bool clearChessBoard();
 
 private:
-    int** _chessboard;
-    int _width;
-    int _height;
+    ChessType _chessboard[CB_MAXSIZE][CB_MAXSIZE];
+	int _size;
 };

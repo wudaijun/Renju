@@ -1,6 +1,6 @@
 #include "model/chessboard.h"
 #include "view/console.h"
-#include "controller/gamecontroller.h"
+#include "controller/game_controller.h"
 
 int main()
 {

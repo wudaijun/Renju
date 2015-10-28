@@ -1,11 +1,10 @@
-#include"evaluator.h"
+#include<string.h> // for memset
+#include <cmath> // for abs
+#include"Evaluator.h"
+#include "model/chessboard.h"
 
-#include<iostream>
-using namespace std;
 
-#define MIN(a, b) (a<b?a:b)
-
-typedef int ChessType;
+#define MIN(a, b) ((a)<(b)?(a):(b))
 
 Evaluator::Evaluator()
 {
@@ -36,8 +35,10 @@ void Evaluator::initPosValue(int size)
             delete[] _posvalue[i];
         delete[] _posvalue;
     }
+
+	_cbsize = size;
     _posvalue = new int* [_cbsize];
-    _cbsize = size;
+	
     for(int i=0; i<_cbsize; i++)
     {
         _posvalue[i] = new int[_cbsize];
@@ -63,10 +64,181 @@ Evaluator::~Evaluator()
     _posvalue = nullptr;
 }
 
-int Evaluator::Evaluate(const ChessBoard& chessboard, bool bIsBlackTurn)
+bool Evaluator::IsGameOver(const ChessBoard& chessboard, bool isWhiteTurn, int& eval)
 {
+	eval = Evaluate(chessboard, isWhiteTurn);
+	if (std::abs(eval) == EVAL_MAX)
+		return true;
+	return false;
+}
+
+// 估值核心 对当前棋局进行估值 估值相对于当前该走的一方
+int Evaluator::Evaluate(const ChessBoard& chessboard, bool isWhiteTurn)
+{
+	++_call_counter;
+
     initPosValue(chessboard.GetSize());
-    return 1;
+	memset(_type_record, TOANALYSIS, sizeof(_type_record));
+	memset(_type_count_white, 0, sizeof(_type_count_white));
+	memset(_type_count_black, 0, sizeof(_type_count_black));
+
+	for (int i = 0; i < _cbsize; i++)
+		for (int j = 0; j < _cbsize; j++)
+		{
+			if (chessboard.GetChess(i, j) != CT_NULL)
+			{
+				if (_type_record[i][j][HORIZON] == TOANALYSIS)
+					analysisHorizon(chessboard, i, j);
+				if (_type_record[i][j][VERTICAL] == TOANALYSIS)
+					analysisVertical(chessboard, i, j);
+				if (_type_record[i][j][LEFTDOWN] == TOANALYSIS)
+					analysisLeftDown(chessboard, i, j);
+				if (_type_record[i][j][LEFTUP] == TOANALYSIS)
+					analysisLeftUp(chessboard, i, j);
+			}
+		}
+
+	// 结果统计
+	for (int i = 0; i < _cbsize; i++)
+		for (int j = 0; j < _cbsize; j++)
+			for (int k = 0; k < 4; k++) // 四个方向 TODO
+			{
+				ChessType chesstype = chessboard.GetChess(i, j);
+				AnalysisType analytype = _type_record[i][j][k];
+				if (chesstype == CT_BLACK)
+					_type_count_black[analytype] ++;
+				else if (chesstype == CT_WHITE)
+					_type_count_white[analytype] ++;
+			}
+
+	// 估值
+	if (isWhiteTurn)
+	{
+		if (_type_count_black[FIVE])
+			return -EVAL_MAX;
+		if (_type_count_white[FIVE])
+			return EVAL_MAX;
+	}
+	else 
+	{
+		if (_type_count_black[FIVE] > 0)
+			return EVAL_MAX;
+		if (_type_count_white[FIVE] > 0)
+			return -EVAL_MAX;
+	}
+
+	// 两个眠四相当于一个活四
+	if (_type_count_black[SFOUR] > 1)
+		_type_count_black[FOUR] ++;
+	if (_type_count_white[SFOUR] > 1)
+		_type_count_white[FOUR] ++;
+
+	int white_value = 0;
+	int black_value = 0;
+	if (isWhiteTurn) // 该白棋走
+	{
+		// 活四或眠四 均可一步制胜
+		if (_type_count_white[FOUR] > 0)
+			return 9990;
+		if (_type_count_white[SFOUR] > 0)
+			return 9980;
+		// 此时白棋无四
+		// 黑棋活四 必胜
+		if (_type_count_black[FOUR] > 0)
+			return -9970;
+		// 黑棋眠四活三 必胜(未考虑白棋堵四，同时出现白四的情况)
+		if (_type_count_black[SFOUR] > 0 && _type_count_black[THREE] > 0)
+			return -9960;
+		// 黑棋无四 而白棋活三  必胜
+		if (_type_count_white[THREE] > 0 && _type_count_black[SFOUR] > 0)
+			return 9950;
+		// 黑棋有多个活三 而白棋无四三 必胜
+		if (_type_count_black[THREE] > 1
+			&& _type_count_white[THREE] == 0
+			&& _type_count_white[STHREE] == 0)
+			return -9940;
+
+		// 接下来不是必胜局  进行加分比较
+		// 活三加分
+		if (_type_count_white[THREE] > 1)
+			white_value += 2000;
+		else if (_type_count_white[THREE] == 1)
+			white_value += 200;
+
+		if (_type_count_black[THREE] > 1)
+			black_value += 500;
+		else if (_type_count_black[THREE] == 1)
+			black_value += 100;
+
+		// 眠三加分
+		white_value += _type_count_white[STHREE] * 20;
+		black_value += _type_count_black[STHREE] * 20;
+
+		// 活二加分
+		white_value += _type_count_white[TWO] * 10;
+		black_value += _type_count_black[TWO] * 10;
+
+		// 眠而加分
+		white_value += _type_count_white[STWO] * 4;
+		black_value += _type_count_black[STWO] * 4;
+	}
+	else // 该黑棋走 分析同上
+	{
+		if (_type_count_black[FOUR] > 0)
+			return 9990;
+		if (_type_count_black[SFOUR] > 0)
+			return 9980;
+	
+		if (_type_count_white[FOUR] > 0)
+			return -9970;
+
+		if (_type_count_white[SFOUR] > 0 && _type_count_black[THREE] > 0)
+			return -9960;
+
+		if (_type_count_black[THREE] > 0 && _type_count_black[SFOUR] > 0)
+			return 9950;
+
+		if (_type_count_white[THREE] > 1
+			&& _type_count_black[THREE] == 0
+			&& _type_count_black[STHREE] == 0)
+			return -9940;
+
+		if (_type_count_black[THREE] > 1)
+			black_value += 2000;
+		else if (_type_count_black[THREE] == 1)
+			black_value += 200;
+
+		if (_type_count_white[THREE] > 1)
+			black_value += 500;
+		else if (_type_count_white[THREE] == 1)
+			black_value += 100;
+
+		black_value += _type_count_black[STHREE] * 20;
+		white_value += _type_count_white[STHREE] * 20;
+		
+		black_value += _type_count_black[TWO] * 10;
+		white_value += _type_count_white[TWO] * 10;
+		
+		black_value += _type_count_black[STWO] * 4;
+		white_value += _type_count_white[STWO] * 4;
+		
+	}
+
+	// 加上位置分数
+	for (int i = 0; i < _cbsize; i++)
+		for (int j = 0; j < _cbsize; j++)
+		{
+		ChessType type = chessboard.GetChess(i, j);
+		if (type == CT_WHITE)
+			white_value += _posvalue[i][j];
+		else if (type == CT_BLACK)
+			black_value += _posvalue[i][j];
+		}
+
+	if (isWhiteTurn)
+		return white_value - black_value;
+	else
+		return black_value - white_value;
 }
 
 int Evaluator::analysisHorizon(const ChessBoard& chessboard, int i, int j)
@@ -74,13 +246,13 @@ int Evaluator::analysisHorizon(const ChessBoard& chessboard, int i, int j)
     ChessType tmpline[CB_MAXSIZE];
     for(int k=0; k<_cbsize; k++)
         tmpline[k] = chessboard.GetChess(i, k);
-    analysisLine(tmpline, size, j);
+    analysisLine(tmpline, _cbsize, j);
     for(int k=0; k<_cbsize; k++)
     {
         if(_tmp_record[k] != TOANALYSIS)
-            _type_record[i][k][0] = _tmp_record[k];
+            _type_record[i][k][HORIZON] = _tmp_record[k];
     }
-    return _type_record[i][j][0];
+    return _type_record[i][j][HORIZON];
 }
 
 int Evaluator::analysisVertical(const ChessBoard& chessboard, int i, int j)
@@ -88,13 +260,44 @@ int Evaluator::analysisVertical(const ChessBoard& chessboard, int i, int j)
     ChessType tmpline[CB_MAXSIZE];
     for(int k=0; k<_cbsize; k++)
         tmpline[k] = chessboard.GetChess(k, j);
-    analysisLine(tmpline, _cbsize, i)
-    for(int k=0; k<size; k++)
+	analysisLine(tmpline, _cbsize, i);
+    for(int k=0; k<_cbsize; k++)
     {
         if(_tmp_record[k] != TOANALYSIS)
-            _type_record[k][j][1] = _tmp_record[k];
+            _type_record[k][j][VERTICAL] = _tmp_record[k];
     }
-    return _type_record[i][j][1];
+    return _type_record[i][j][VERTICAL];
+}
+
+int Evaluator::analysisLeftUp(const ChessBoard& chessboard, int i, int j)
+{
+	ChessType tmpline[CB_MAXSIZE];
+	int istart, jstart;
+	if (i < j)
+	{
+		istart = 0;
+		jstart = j - i;
+	}
+	else
+	{
+		istart = i - j;
+		jstart = 0;
+	}
+	int k;
+	for (k = 0; i < _cbsize; k++)
+	{
+		if (istart + k >= _cbsize || jstart + k >= _cbsize)
+			break;
+		tmpline[k] = chessboard.GetChess(istart+k, jstart+k);
+	}
+	analysisLine(tmpline, k, j - jstart);
+	for (int t = 0; t < k; ++t)
+	{
+		if (_tmp_record[t] != TOANALYSIS)
+			_type_record[istart + t][jstart + t][LEFTUP] = _tmp_record[t];
+	}
+
+	return _type_record[i][j][LEFTUP];
 }
 
 int Evaluator::analysisLeftDown(const ChessBoard& chessboard, int i, int j)
@@ -120,19 +323,19 @@ int Evaluator::analysisLeftDown(const ChessBoard& chessboard, int i, int j)
         tmpline[k] = chessboard.GetChess(istart-k, jstart+k);
     }
     analysisLine(tmpline, k, j-jstart);
-    for(int k=0; k<_cbsize; k++)
+    for(int t=0; t<k; t++)
     {
-        if(_tmp_record[k] != TOANALYSIS)
-            _type_record[istart-k][jstart+k][3] = _tmp_record[k];
+        if(_tmp_record[t] != TOANALYSIS)
+            _type_record[istart-t][jstart+t][LEFTDOWN] = _tmp_record[t];
     }
-    return _type_record[i][j][3];
+    return _type_record[i][j][LEFTDOWN];
 }
 
 int Evaluator::analysisLine(ChessType line[], int size, int pos)
 {
-    memset(_tmp_record, sizeof(_tmp_record), TOANALYSIS);
+	memset(_tmp_record, TOANALYSIS, sizeof(_tmp_record));
     // 小于5格 没有价值 直接标记为分析过
-    if(size < 5)
+     if(size < 5)
     {
         memset(_tmp_record, ANALYSISED, size);
         return 0;
@@ -162,7 +365,8 @@ int Evaluator::analysisLine(ChessType line[], int size, int pos)
     // 可下位置小于5 没有价值
     if(validCount < 5)
     {
-        memset(_tmp_record, ANALYSISED, size);
+		for (int k = leftValid; k <= rightValid; k++)
+			_tmp_record[k] = ANALYSISED;
         return 0;
     }
 
@@ -245,6 +449,7 @@ int Evaluator::analysisLine(ChessType line[], int size, int pos)
     if(sameCount == 2)
     {
         bool leftClear = false;
+		bool leftThree = false;
         if(leftSame>0 && line[leftSame-1] == CT_NULL) // +00
         {
             if(leftSame>1 && line[leftSame-2] == line[leftSame]) // 0+00
@@ -257,11 +462,13 @@ int Evaluator::analysisLine(ChessType line[], int size, int pos)
                         _tmp_record[leftSame-3] = ANALYSISED;
                         _tmp_record[leftSame] = SFOUR;
                     }
-                    else if(line[leftSame-3] == CT_NULL)
-                    {
-                        _tmp_record[leftSame-2] = ANALYSISED;
-                        _tmp_record[leftSame] = STHREE;
-                    }
+					else if (line[leftSame - 3] == CT_NULL) // +0+00
+					{
+						_tmp_record[leftSame - 2] = ANALYSISED;
+						_tmp_record[leftSame] = STHREE;
+					}
+					else
+						leftThree = true;
                 }
             }
             else
@@ -285,14 +492,16 @@ int Evaluator::analysisLine(ChessType line[], int size, int pos)
                     }
                     else if(line[rightSame+3] == CT_NULL) // 00+0+
                     {
-                        _tmp_record[leftSame+2] = ANALYSISED;
-                        _tmp_record[leftSame] = STHREE;
+                        _tmp_record[rightSame+2] = ANALYSISED;
+                        _tmp_record[rightSame] = STHREE;
                     }
                 }
             }
             else
             {
-                if(leftClear)
+				if (leftThree)
+					_tmp_record[rightSame] = STHREE;
+                else if(leftClear)
                     _tmp_record[rightSame] = TWO;
             }
         }
@@ -308,10 +517,40 @@ int Evaluator::analysisLine(ChessType line[], int size, int pos)
     return _tmp_record[pos];
 }
 
-int test_line(int line[], int size, int pos)
+#include<iostream>
+using std::cout;
+using std::endl;
+void Evaluator::PrintTypeRecord()
 {
-    analysisLine(line, size, pos);
-    for(int i=0; i<size; i++)
-        cout << line[i];
-    cout << endl;
+	cout << "Herizon" << endl;
+	for (int i = 0; i < _cbsize; i++)
+	{
+		for (int j = 0; j < _cbsize; j++)
+			cout << (int)(_type_record[i][j][HORIZON]) << " ";
+		cout << endl;
+	}
+
+	cout << "Vertical" << endl;
+	for (int i = 0; i < _cbsize; i++)
+	{
+		for (int j = 0; j < _cbsize; j++)
+			cout << (int)(_type_record[i][j][VERTICAL]) << " ";
+		cout << endl;
+	}
+
+	cout << "LeftDown" << endl;
+	for (int i = 0; i < _cbsize; i++)
+	{
+		for (int j = 0; j < _cbsize; j++)
+			cout << (int)(_type_record[i][j][LEFTDOWN]) << " ";
+		cout << endl;
+	}
+
+	cout << "LeftUp" << endl;
+	for (int i = 0; i < _cbsize; i++)
+	{
+		for (int j = 0; j < _cbsize; j++)
+			cout << (int)(_type_record[i][j][LEFTUP]) << " ";
+		cout << endl;
+	}
 }

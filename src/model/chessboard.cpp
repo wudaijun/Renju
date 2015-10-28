@@ -1,89 +1,75 @@
-#include"chessboard.h"
+#include"ChessBoard.h"
 
 ChessBoard::ChessBoard()
 {
-    _chessboard = nullptr;
-    _width = 0;
-    _height = 0;
+	_size = CB_SIZE;
+	clearChessBoard();
 }
 
-ChessBoard::ChessBoard(int width, int height)
+ChessBoard::ChessBoard(int size)
 {
-    createChessBoard(width, height);
+	_size = size;
+	clearChessBoard();
+}
+
+ChessBoard::ChessBoard(ChessType cb[CB_SIZE][CB_SIZE])
+{
+	_size = CB_SIZE;
+	for (int i = 0; i < CB_SIZE; i++)
+		for (int j = 0; j < CB_SIZE; j++)
+			_chessboard[i][j] = cb[i][j];
 }
 
 ChessBoard::~ChessBoard()
 {
-    destroyChessBoard();
 }
 
-bool ChessBoard::Init(int width, int height)
+ChessType ChessBoard::GetChess(int i, int j) const
 {
-    if(width <= 0 || height <= 0)
-        return false;
-
-    destroyChessBoard();
-    return createChessBoard(width, height);
-}
-
-int ChessBoard::GetChess(int x, int y) const
-{
-    if(_chessboard!=nullptr && IsValidPos(x, y))
-        return _chessboard[y][x];
+    if(_chessboard!=nullptr && IsValidPos(i, j))
+        return _chessboard[i][j];
     return CT_NULL;
 }
 
-// 落子 并不检查该位置是否已经存在棋子 这是Controller该关心的
-// 模型本身原则上只负责简单读写
-int ChessBoard::SetChess(int x, int y, int chess)
+// 落子 返回该位置上之前的棋子
+ChessType ChessBoard::SetChess(int i, int j, ChessType chess)
 {
-    int oldchess = _chessboard[y][x];
-    _chessboard[y][x] = chess;
+    int oldchess = _chessboard[i][j];
+    _chessboard[i][j] = chess;
     return oldchess;
 }
 
-bool ChessBoard::IsChessExist(int x, int y) const
+bool ChessBoard::IsChessExist(int i, int j) const
 {
-    return _chessboard[y][x] != CT_NULL;
+    return _chessboard[i][j] != CT_NULL;
 }
 
-bool ChessBoard::IsValidPos(int x, int y) const
+bool ChessBoard::IsValidPos(int i, int j) const
 {
-    if(0<=x && x<_width && 0<=y && y<_height)
+    if(0<=j && j<_size && 0<=i && i<_size)
     {
         return true;
     }
     return false;
 }
 
-bool ChessBoard::createChessBoard(int width, int height)
+bool ChessBoard::IsFull() const
 {
-    _width = width;
-    _height = height;
+	for (int i = 0; i < _size; i++)
+		for (int j = 0; j < _size; j++)
+			if (_chessboard[i][j] == CT_NULL)
+				return false;
 
-    _chessboard = new int*[_height];
-    for(int i=0; i<_height; ++i)
-    {
-        _chessboard[i] = new int[_width];
-        for(int j=0; j<_width; ++j)
-            _chessboard[i][j] = CT_NULL;
-    }
-    _chessboard[2][2] = CT_BLACK;
-    _chessboard[3][3] = CT_WHITE;
-    return true;
+	return true;
 }
 
-void ChessBoard::destroyChessBoard()
+bool ChessBoard::clearChessBoard()
 {
-    if(_chessboard != nullptr)
-    {
-        for(int i=0; i<_height; ++i)
-        {
-            delete[] _chessboard[i];
-        }
-        delete[] _chessboard;
-        _chessboard = nullptr;
-    }
+	for (int i = 0; i < CB_MAXSIZE; i++)
+		for (int j = 0; j < CB_MAXSIZE; j++)
+			_chessboard[i][j] = CT_NULL;
+
+	return true;
 }
 
 
